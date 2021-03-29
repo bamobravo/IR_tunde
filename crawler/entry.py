@@ -1,8 +1,8 @@
 from crawler import Crawler
 from cache import Cache
 
-
-sites =['https://ckan.org','https://data.gov','https://data.gov.uk']
+#ckan.org is a data portal software
+sites =['https://data.gov','https://data.gov.uk','https://data.gov.uk/search?filters%5Btopic%5D=Business+and+economy','https://catalog.data.gov/dataset']
 
 visitedData = Cache()
 def startCrawler():

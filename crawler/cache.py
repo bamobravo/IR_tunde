@@ -5,6 +5,7 @@ class Cache:
 	"""docstring for Cache"""
 	def __init__(self,saveRate=20):
 		self.path = 'visited.visited'
+		self.saveRate = saveRate
 		self.visited = self.loadVisited()
 		self.new_added = False
 		self.dirty = False
