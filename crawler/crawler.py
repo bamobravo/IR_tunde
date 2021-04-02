@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup as bs
 import time
 import re
 import sys
+import json
 sys.path.append('classifier')
 import crawler_classifier as classifier
 import sqlite3
@@ -35,24 +36,34 @@ class Crawler(threading.Thread):
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
 		next_link = self.getNextLink(content)
-		if (not next_link) and self.isRelevantDataPage(content):
-			self.savePage(content)
+		if (not next_link) and self.isRelevantDataPage(content,link):
+			self.savePage(link,content)
 			return all_links
 		return all_links.append(next_link)
 
 
-	def isRelevantDataPage(self,content):
+	def hasDownloadAction(self,content,link):
+		download_links = content.find_all('a',href=re.compile(r'\.*(download)\.*',flags=re.I|re.M))
+		if download_links:
+			return True
+		download_links = content.find_all('span',string=re.compile(r'\.*(download)\.*',flags=re.I|re.M))
+		if download_links:
+			return True
+		return False
+
+	def isRelevantDataPage(self,content,link):
 		#convert content to text first
 		# search for meta information and use the classifier module to determine how relavant the page is
+		threshold =3
 		text = self.extractMainText(content)
 		metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|(\w+ )+:$\b)'
 		total_matched = len(list(re.finditer(metaPattern,text,re.I|re.M)))
 		# check if the page has a download page
-		download_links = content.find_all('a',href=re.compile(r'\.*(download)\.*',flags=re.I|re.M))
+		has_download = self.hasDownloadAction(content,link)
 		if total_matched:
-			return total_matched > 10 and download_links and classifier.isGovernmentData(text)
+			return total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
 		return False
-	
+
 	def tablesExists(self):
 		table_check="SELECT name FROM sqlite_master WHERE type='table'"
 		cur = self.connection.cursor()
@@ -74,7 +85,7 @@ class Crawler(threading.Thread):
 		except Exception as e:
 			return False
 
-	def savePage(self,content):
+	def savePage(self,link,content):
 		# get the the title of the document first
 		try:
 			if not self.connection:
@@ -83,12 +94,58 @@ class Crawler(threading.Thread):
 			self.connection = sqlite3.connect(self.database_path)
 		if self.createTables():
 			heading=''
-			title_element = content.select('.module-content > h1,.column-two-thirds h1')
+			title_element = content.select("h1[itemprop='name'],.column-two-thirds h1")
 			if title_element:
-				print(title_element)
-				heading = title_element[0].get_text()
-				print(heading)
+				heading = title_element[0].string.strip()
+				# now get the meta data
+				metadata = self.extractMetadata(link,content)
+				print('stopping here jare')
 				exit()
+
+	def getMetaText(self,element):
+		if not element.find('a'):
+			return element.string.strip()
+		return element.a.string.strip()
+
+
+	def getMetadata(self,link,content):
+		try:
+			maxText=50
+			keys = [self.getMetaText(x) for x in content.select('.metadata > dt') if x]
+			values = [self.getMetaText(x) for x in content.select('.metadata > dd') if x]
+			result = dict(zip(keys,values))
+			#get the information abut the summary now
+			summary = [x.string for x in content.select('.js-summary > p') if x]
+			summary_text=''
+			if summary:
+				for text in summary:
+					if ':' in text:
+						temp = text.split(':',maxsplit=1)
+						if '\n' in temp[0] or len(temp[0]) > maxText:
+							summary_text+=("\n"+text)
+							continue
+						result[temp[0].strip()]=temp[1].strip()
+					else:
+						summary_text+=("\n"+text)
+				result['summary']=summary_text
+			return result
+		except Exception as e:
+			return False
+
+	def extractMetadata(self,base,content):
+		try:
+			metadata_link = content.find('a',string=re.compile(r'\.*(download +metadata)\.*',flags=re.I|re.M))
+			if metadata_link:
+				current_link = metadata_link.get('href')
+				link = self.wrapLink(base,current_link)
+				jsonContent = requests.get(link).json()
+				result= json.dumps(jsonContent)
+				return result
+			# what if the metadata does not contain a link to a file
+			return self.getMetadata(base,content)
+		except Exception as e:
+			print(e)
+			return False
 
 	def extractMainText(self,content):
 		body = content.select('main,article.prose')
