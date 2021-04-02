@@ -8,6 +8,7 @@ import json
 sys.path.append('classifier')
 import crawler_classifier as classifier
 import sqlite3
+import time
 
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
@@ -16,30 +17,45 @@ class Crawler(threading.Thread):
 		self.links = [site]
 		self.site_type=site_type
 		self.cache = cache
-		self.database_path = "./data/data.db"
+		self.database_path = "data.db"
 
 		#create a cache for check the page that has already been visited
 
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
-		current_link = self.links.pop(0)
-		content = requests.get(current_link).content
-		htmlContent = bs(content,'html.parser')
-		#append link that have next here also
-		list_items= htmlContent.select('li.dataset-item a,ul.govuk-list.dgu-topics__list > li a')
-		all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items]
-		self.processPage(htmlContent,current_link,all_links)
-		self.cache.addVisited(current_link)
+		while len(self.links)>0:
+			try:
+				current_link = self.links.pop(0)
+				#check if teh page has been visited 
+				if self.cache.isVisited(current_link):
+					print('already visited', current_link,'\n')
+					continue
+				content = requests.get(current_link).content
+				htmlContent = bs(content,'html.parser')
+				#append link that have next here also
+				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a')
+				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+				to_add =self.processPage(htmlContent,current_link,all_links)
+				if to_add:
+					self.cache.addVisited(current_link)
+					self.links+=to_add
+				time.sleep(2)
+			except Exception as e:
+				continue
 
 	def processPage(self,content, link,all_links):
-		#tthis will basically decide if to save the page or not based on the content of the page
+		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
 		next_link = self.getNextLink(content)
+		if next_link:
+			next_link = self.wrapLink(link,next_link)
 		if (not next_link) and self.isRelevantDataPage(content,link):
 			self.savePage(link,content)
 			return all_links
-		return all_links.append(next_link)
+		if next_link:
+			all_links.append(next_link)
+		return all_links
 
 
 	def hasDownloadAction(self,content,link):
@@ -77,13 +93,21 @@ class Crawler(threading.Thread):
 				return True
 			# document should one of the tables
 			table_creation="""
-				CREATE TABLE IF NOT EXISTS document (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,metadata text,date_created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP ,URL TEXT NOT NULL,content TEXT NOT NULL)
+				CREATE TABLE IF NOT EXISTS document (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,metadata text,page_source TEXT NOT NULL,date_created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP ,URL TEXT NOT NULL,content TEXT NOT NULL)
 			"""
 			cur = self.connection.cursor()
 			result = cur.execute(table_creation)
 			return True
 		except Exception as e:
 			return False
+
+	def insertPage(self,title,metadata,url,content,html):
+		query="INSERT INTO document(title,metadata,url,content,page_source) VALUES(?,?,?,?,?)"
+		cursor= self.connection.cursor()
+		result = cursor.execute(query,[title,metadata,url,content,html])
+		self.connection.commit()
+		return result.rowcount
+
 
 	def savePage(self,link,content):
 		# get the the title of the document first
@@ -99,14 +123,16 @@ class Crawler(threading.Thread):
 				heading = title_element[0].string.strip()
 				# now get the meta data
 				metadata = self.extractMetadata(link,content)
-				print('stopping here jare')
-				exit()
+				text_content = content.get_text()
+				html = str(content)
+				self.insertPage(heading,metadata,link,text_content,html)
+				return True
+		return False
 
 	def getMetaText(self,element):
 		if not element.find('a'):
 			return element.string.strip()
 		return element.a.string.strip()
-
 
 	def getMetadata(self,link,content):
 		try:
@@ -128,7 +154,7 @@ class Crawler(threading.Thread):
 					else:
 						summary_text+=("\n"+text)
 				result['summary']=summary_text
-			return result
+			return json.dumps(result)
 		except Exception as e:
 			return False
 
