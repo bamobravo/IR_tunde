@@ -14,10 +14,14 @@ class Crawler(threading.Thread):
 	"""docstring for Crawler"""
 	def __init__(self,cache, site,site_type):
 		threading.Thread.__init__(self)
-		self.links = [site]
+		try:
+			with open('all_links.data','r') as fl:
+				self.links = pickle.load(fl)
+		except Exception as e:
+			self.links = [site]
 		self.site_type=site_type
 		self.cache = cache
-		self.database_path = "data.db"
+		self.database_path = "./data.db"
 
 		#create a cache for check the page that has already been visited
 
@@ -26,6 +30,7 @@ class Crawler(threading.Thread):
 		while len(self.links)>0:
 			try:
 				current_link = self.links.pop(0)
+				print('visiting: ',current_link)
 				#check if teh page has been visited 
 				if self.cache.isVisited(current_link):
 					print('already visited', current_link,'\n')
@@ -33,12 +38,16 @@ class Crawler(threading.Thread):
 				content = requests.get(current_link).content
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
-				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a')
+				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link')
 				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 				to_add =self.processPage(htmlContent,current_link,all_links)
 				if to_add:
 					self.cache.addVisited(current_link)
 					self.links+=to_add
+				# save the visited links
+				if to_add:
+					with open('all_links.data','wb') as fl:
+						pickle.dump(self.links,fl)
 				time.sleep(2)
 			except Exception as e:
 				continue
@@ -70,6 +79,7 @@ class Crawler(threading.Thread):
 	def isRelevantDataPage(self,content,link):
 		#convert content to text first
 		# search for meta information and use the classifier module to determine how relavant the page is
+
 		threshold =3
 		text = self.extractMainText(content)
 		metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|(\w+ )+:$\b)'
@@ -77,7 +87,9 @@ class Crawler(threading.Thread):
 		# check if the page has a download page
 		has_download = self.hasDownloadAction(content,link)
 		if total_matched:
-			return total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
+			result = total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
+			print(result)
+			return result
 		return False
 
 	def tablesExists(self):
@@ -181,7 +193,9 @@ class Crawler(threading.Thread):
 		return text
 		
 	def getNextLink(self,content):
-		temp = content.select('.pagination li:last-child a,.dgu-pagination__numbers > a')
+		temp = content.select('.pagination li:last-child a')
+		if not temp:
+			temp = content.find('a',{'rel':'next'})
 		if not temp:
 			return False
 		return temp[0].get('href')
