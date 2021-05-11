@@ -10,6 +10,8 @@ import crawler_classifier as classifier
 import sqlite3
 import time
 
+
+harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
 	def __init__(self,cache, site,site_type):
