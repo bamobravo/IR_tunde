@@ -9,9 +9,10 @@ sys.path.append('classifier')
 import crawler_classifier as classifier
 import sqlite3
 import time
+import pymongo
 
 
-harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
+# harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
 	def __init__(self,cache, site,site_type):
@@ -24,6 +25,7 @@ class Crawler(threading.Thread):
 		self.site_type=site_type
 		self.cache = cache
 		self.database_path = "./data.db"
+		self.DBType='mongo'
 
 		#create a cache for check the page that has already been visited
 
@@ -124,6 +126,38 @@ class Crawler(threading.Thread):
 
 
 	def savePage(self,link,content):
+		if self.DBType=='sqllite':
+			return self.saveSqllite(link,content)
+		elif self.DBType=='mongo':
+			return self.saveMongo(link,content)
+
+
+	def saveMongo(self,link,content):
+		# get the the title of the document first
+		conn_str ='mongodb://localhost'
+		client = pymongo.MongoClient(conn_str,serverSelectionTimeoutMS=5000)
+		try:
+			db = client['IR_crawled_data']
+			collection = db['pages']
+			heading=''
+			title_element = content.select("h1[itemprop='name'],.column-two-thirds h1")
+			if title_element:
+				heading = title_element[0].string.strip()
+				# now get the meta data
+				metadata = self.extractMetadata(link,content)
+				text_content = content.get_text()
+				html = str(content)
+				document ={'title':heading,"metadata":metadata,'link':link,'text':text_content,'raw':html}
+				result =collection.insert_one(document)
+				print('document inserted')
+				exit()
+				return result.inserted_id
+		except Exception as e:
+			print(e)
+			exit()
+			raise e
+
+	def saveSqllite(self, link, content):
 		# get the the title of the document first
 		try:
 			if not self.connection:
@@ -142,6 +176,7 @@ class Crawler(threading.Thread):
 				self.insertPage(heading,metadata,link,text_content,html)
 				return True
 		return False
+
 
 	def getMetaText(self,element):
 		if not element.find('a'):

@@ -5,7 +5,7 @@ from cache import Cache
 # https://www.usatoday.com/news/politics/
 
 #ckan.org is a data portal software
-sites =['https://catalog.data.gov/dataset','https://data.gov.uk']
+sites =['https://open.canada.ca/en/open-data','https://catalog.data.gov/dataset','https://data.gov.uk']
 # sites =['https://data.gov.uk/search?filters%5Btopic%5D=Mapping&page=12']
 visitedData = Cache()
 def startCrawler():
