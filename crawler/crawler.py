@@ -10,6 +10,7 @@ import crawler_classifier as classifier
 import sqlite3
 import time
 import pymongo
+import pickle
 
 
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
@@ -18,9 +19,10 @@ class Crawler(threading.Thread):
 	def __init__(self,cache, site,site_type):
 		threading.Thread.__init__(self)
 		try:
-			with open('all_links.data','r') as fl:
+			with open('all_links.data','rb') as fl:
 				self.links = pickle.load(fl)
 		except Exception as e:
+			print(e)
 			self.links = [site]
 		self.site_type=site_type
 		self.cache = cache
@@ -42,7 +44,7 @@ class Crawler(threading.Thread):
 				content = requests.get(current_link).content
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
-				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link')
+				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,panel-body a')
 				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 				to_add =self.processPage(htmlContent,current_link,all_links)
 				if to_add:
@@ -60,7 +62,7 @@ class Crawler(threading.Thread):
 		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
-		next_link = self.getNextLink(content)
+		next_link = self.getNextLink(content,link)
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
 		if (not next_link) and self.isRelevantDataPage(content,link):
@@ -229,13 +231,26 @@ class Crawler(threading.Thread):
 		text = body[0].get_text()
 		return text
 		
-	def getNextLink(self,content):
+	def linkFromJSNext(self,link,element):
+		gotoText = element.get('onclick')
+		temp = re.search(r'\d+',gotoText)
+		if not temp:
+			return False
+		temp = temp.group()
+		pat = r'page=\d+'	
+		result = re.sub(pat,'page='+temp,link) if re.search(pat,link) else link+'&page='+temp
+		return result
+
+	def getNextLink(self,content,link):
 		temp = content.select('.pagination li:last-child a')
 		if not temp:
 			temp = content.find('a',{'rel':'next'})
 		if not temp:
 			return False
-		return temp[0].get('href')
+		result = temp[0].get('href')
+		if result.strip()=='#':
+			return self.linkFromJSNext(link,temp[0])
+		return result
 
 	def wrapLink(self,current_link,link):
 		pattern =r'(https?://|www\.)[a-z0-9.\-_]+'
