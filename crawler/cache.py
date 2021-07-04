@@ -3,7 +3,7 @@ import os
 
 class Cache:
 	"""docstring for Cache"""
-	def __init__(self,saveRate=20):
+	def __init__(self,saveRate=1):
 		self.path = 'visited.visited'
 		self.saveRate = saveRate
 		self.visited = self.loadVisited()
@@ -30,7 +30,7 @@ class Cache:
 
 	def addVisited(self,link):
 		self.visited.append(link)
-		if (self.dirty and len(self.visited) % self.saveRate):
+		if (len(self.visited) % self.saveRate==0):
 			self.saveVisited()
 		self.dirty= True
 

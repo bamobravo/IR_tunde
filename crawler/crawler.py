@@ -23,7 +23,7 @@ class Crawler(threading.Thread):
 				self.links = sites+pickle.load(fl)
 		except Exception as e:
 			print(e)
-			self.links = [site]
+			self.links = sites
 		self.site_type=site_type
 		self.cache = cache
 		self.database_path = "./data.db"
@@ -47,15 +47,15 @@ class Crawler(threading.Thread):
 				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
 				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 				to_add =self.processPage(htmlContent,current_link,all_links)
+				self.cache.addVisited(current_link)
 				if to_add:
-					self.cache.addVisited(current_link)
 					self.links+=to_add
 				# save the visited links
 				#if ther are changes
 				if to_add:
 					with open('all_links.data','wb') as fl:
 						pickle.dump(self.links,fl)
-				time.sleep(2)
+				# time.sleep(2)
 			except Exception as e:
 				continue
 
@@ -145,7 +145,7 @@ class Crawler(threading.Thread):
 			db = client['IR_crawled_data']
 			collection = db['pages']
 			heading=''
-			title_element = content.select("h1[itemprop='name'],.column-two-thirds h1")
+			title_element = content.select("h1[itemprop='name'],.column-two-thirds h1,main.container h1")
 			if title_element:
 				heading = title_element[0].string.strip()
 				# now get the meta data
@@ -155,12 +155,13 @@ class Crawler(threading.Thread):
 				document ={'title':heading,"metadata":metadata,'link':link,'text':text_content,'raw':html}
 				result =collection.insert_one(document)
 				print('document inserted')
-				exit()
+				# exit()
 				return result.inserted_id
 		except Exception as e:
+			# return 
 			print(e)
-			exit()
-			raise e
+			# exit()
+			return False
 
 	def saveSqllite(self, link, content):
 		# get the the title of the document first
