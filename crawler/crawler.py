@@ -16,11 +16,11 @@ import pickle
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
-	def __init__(self,cache, site,site_type):
+	def __init__(self,cache, sites,site_type):
 		threading.Thread.__init__(self)
 		try:
 			with open('all_links.data','rb') as fl:
-				self.links = pickle.load(fl)
+				self.links = sites+pickle.load(fl)
 		except Exception as e:
 			print(e)
 			self.links = [site]
@@ -44,13 +44,14 @@ class Crawler(threading.Thread):
 				content = requests.get(current_link).content
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
-				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,panel-body a')
+				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
 				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 				to_add =self.processPage(htmlContent,current_link,all_links)
 				if to_add:
 					self.cache.addVisited(current_link)
 					self.links+=to_add
 				# save the visited links
+				#if ther are changes
 				if to_add:
 					with open('all_links.data','wb') as fl:
 						pickle.dump(self.links,fl)
@@ -74,10 +75,13 @@ class Crawler(threading.Thread):
 
 
 	def hasDownloadAction(self,content,link):
-		download_links = content.find_all('a',href=re.compile(r'\.*(download)\.*',flags=re.I|re.M))
+		download_links = content.find_all('a',href=re.compile(r'(download)',flags=re.I|re.M))
 		if download_links:
 			return True
-		download_links = content.find_all('span',string=re.compile(r'\.*(download)\.*',flags=re.I|re.M))
+		download_links = content.find_all('span',string=re.compile(r'(download)*',flags=re.I|re.M))
+		if download_links:
+			return True
+		download_links = content.find_all('a',string=re.compile(r'(download)',flags=re.I|re.M))
 		if download_links:
 			return True
 		return False
@@ -88,13 +92,12 @@ class Crawler(threading.Thread):
 
 		threshold =3
 		text = self.extractMainText(content)
-		metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|(\w+ )+:$\b)'
+		metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|pdf|(\w+ )+:$\b)'
 		total_matched = len(list(re.finditer(metaPattern,text,re.I|re.M)))
 		# check if the page has a download page
 		has_download = self.hasDownloadAction(content,link)
 		if total_matched:
 			result = total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
-			print(result)
 			return result
 		return False
 
