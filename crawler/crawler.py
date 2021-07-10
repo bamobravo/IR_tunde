@@ -11,12 +11,14 @@ import sqlite3
 import time
 import pymongo
 import pickle
+from itertools import cycle
+from lxml.html import fromstring
 
 
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
-	def __init__(self,cache, sites,site_type):
+	def __init__(self,cache, sites,site_type,proxy=True):
 		threading.Thread.__init__(self)
 		try:
 			with open('all_links.data','rb') as fl:
@@ -28,8 +30,43 @@ class Crawler(threading.Thread):
 		self.cache = cache
 		self.database_path = "./data.db"
 		self.DBType='mongo'
+		proxies =self.get_proxies()
+		self.proxy_pool = cycle(proxies)
+		self.use_proxy =proxy
 
 		#create a cache for check the page that has already been visited
+
+	def get_proxies(self):
+	  url = 'https://free-proxy-list.net/'
+	  response = requests.get(url)
+	  parser = fromstring(response.text)
+	  proxies = set()
+	  for i in parser.xpath('//tbody/tr')[:100]:
+	    if i.xpath('.//td[7][contains(text(),"yes")]'):
+	      #Grabbing IP and corresponding PORT
+	      proxy = ":".join([i.xpath('.//td[1]/text()')[0], i.xpath('.//td[2]/text()')[0]])
+	      proxies.add(proxy)
+	  return proxies
+
+	def get_request(self,url):
+		try:
+			proxy =next(self.proxy_pool)
+			result = requests.get(url,proxies={'http':proxy,'https':proxy},timeout=10,verify=False)
+			return result
+
+		except Exception as e:
+			print(e)
+			return False
+		
+
+	def make_request(self,url,rotate=True):
+		result = self.get_request(url)
+		while not result:
+			print('retrying : '+url)
+			result = self.get_request(url)
+
+		result= result.content
+		return result
 
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
@@ -41,7 +78,9 @@ class Crawler(threading.Thread):
 				if self.cache.isVisited(current_link):
 					print('already visited', current_link,'\n')
 					continue
-				content = requests.get(current_link).content
+				
+				content = self.make_request(current_link) if self.use_proxy else requests.get(current_link).content
+
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
 				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')

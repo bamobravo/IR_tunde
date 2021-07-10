@@ -13,7 +13,9 @@ def startCrawler():
 	# create a parralel crawler for each of the websites
 	# get information about pages already visited
 	# for site in sites:
-	Crawler(visitedData,sites,'site').start()
+	# use three threads to make things a bit faster
+	for x in range(3):
+		Crawler(visitedData,sites,'site').start()
 
 
 startCrawler()
