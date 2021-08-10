@@ -18,11 +18,15 @@ from lxml.html import fromstring
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""docstring for Crawler"""
-	def __init__(self,cache, sites,site_type,proxy=True):
+	def __init__(self,cache, sites,site_type,proxy=False):
 		threading.Thread.__init__(self)
+		visiteds = cache.loadVisited()
 		try:
 			with open('all_links.data','rb') as fl:
-				self.links = sites+pickle.load(fl)
+				# load the visited links too and remove them once and for all, so you can focus on the links that are yet to be visited
+				visiteds = set(visiteds)
+				temp = set(sites+pickle.load(fl)).difference(visiteds)
+				self.links = list(temp)
 		except Exception as e:
 			print(e)
 			self.links = sites
