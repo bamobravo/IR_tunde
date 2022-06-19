@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup as bs
 import requests
 import json
+
 requests.packages.urllib3.disable_warnings()
 
 categories={'finance':['https://dmoz-odp.org/Home/Personal_Finance/'],'education':['https://dmoz-odp.org/Reference/Education/'],'health':['https://dmoz-odp.org/Health/'],'Agriculture':['https://dmoz-odp.org/Science/Agriculture/','https://dmoz-odp.org/Business/Agriculture_and_Forestry/'],
