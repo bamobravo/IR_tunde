@@ -171,17 +171,17 @@ class Crawler(threading.Thread):
 	def isRelevantDataPage(self,content,link):
 		#convert content to text first
 		# search for meta information and use the classifier module to determine how relavant the page is
-
-		threshold =3
-		text = self.extractMainText(content)
-		metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|pdf|(\w+ )+:$\b)'
-		total_matched = len(list(re.finditer(metaPattern,text,re.I|re.M)))
-		# check if the page has a download page
-		has_download = self.hasDownloadAction(content,link)
-		if total_matched:
-			result = total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
-			return result
-		return False
+		return classifier.classify(content)
+		# threshold =3
+		# text = self.extractMainText(content)
+		# metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|pdf|(\w+ )+:$\b)'
+		# total_matched = len(list(re.finditer(metaPattern,text,re.I|re.M)))
+		# # check if the page has a download page
+		# has_download = self.hasDownloadAction(content,link)
+		# if total_matched:
+		# 	result = total_matched > threshold and has_download and classifier.isGovernmentData(text,threshold)
+		# 	return result
+		# return False
 
 	def tablesExists(self):
 		table_check="SELECT name FROM sqlite_master WHERE type='table'"
