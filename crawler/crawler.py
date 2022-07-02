@@ -72,9 +72,43 @@ class Crawler(threading.Thread):
 		result= result.content
 		return result
 
+	def getBlockScore(self,block_text):
+		score = classifier.getScore(block_text)
+		return score
+
+	def getRankedLinks(self,content_blocks,current_link):
+		if not content_blocks:
+			return []
+		links =[]
+		result =[]
+		for block in content_blocks:
+			text = block.get_text()
+			score = self.getBlockScore(text)
+			list_items= list(set(block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')))
+			all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+			if not all_links:
+				continue
+			links.append((all_links,score))
+			
+		return self.cleanLinks(links)
+
+	def cleanLinks(self, links):
+		minVisited =[]
+		result=[]
+		links = sorted(links,key=lambda x: x[1],reverse=True)
+		for lk,score in links:
+			for link in lk:
+				if link in minVisited:
+					continue
+				result.append((link,score))
+				minVisited.append(link)
+
+		return result
+
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
-		while len(self.links)>0:
+		while len(self.links) > 0:
+			next_score =0.5
 			try:
 				current_link = self.links.pop(0)
 				print('visiting: ',current_link)
@@ -82,14 +116,16 @@ class Crawler(threading.Thread):
 				if self.cache.isVisited(current_link):
 					print('already visited', current_link,'\n')
 					continue
-				
 				content = self.make_request(current_link) if self.use_proxy else requests.get(current_link).content
 
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
-				list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
-				all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
-				to_add =self.processPage(htmlContent,current_link,all_links)
+				next_link =self.processPage(htmlContent,current_link)
+				# need to find a way to score this part
+				content_blocks = htmlContent.select('div,h1,h2,h3,h4,h5,h6,p,address,center,ul,dt,table,th,tr,td')
+				to_add = self.getRankedLinks(content_blocks,current_link)
+				if next_link:
+					to_add.append((next_link,next_score))
 				self.cache.addVisited(current_link)
 				if to_add:
 					self.links+=to_add
@@ -100,9 +136,11 @@ class Crawler(threading.Thread):
 						pickle.dump(self.links,fl)
 				# time.sleep(2)
 			except Exception as e:
+				print(e)
+				exit()
 				continue
 
-	def processPage(self,content, link,all_links):
+	def processPage(self,content, link):
 		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
@@ -111,10 +149,11 @@ class Crawler(threading.Thread):
 			next_link = self.wrapLink(link,next_link)
 		if (not next_link) and self.isRelevantDataPage(content,link):
 			self.savePage(link,content)
-			return all_links
-		if next_link:
-			all_links.append(next_link)
-		return all_links
+			# return all_links
+		# if next_link:
+		# 	all_links.append(next_link)
+		# return all_links
+		return next_link
 
 
 	def hasDownloadAction(self,content,link):
