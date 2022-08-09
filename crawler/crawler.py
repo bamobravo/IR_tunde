@@ -39,7 +39,8 @@ class Crawler(threading.Thread):
 		self.proxy_pool = cycle(proxies)
 		self.use_proxy =proxy
 
-		self.log = Log('processlog.csv', 'url', 'timestamp', echo=False)
+		self.log = Log('in_crawlinglog.csv', 'url', 'timestamp', echo=False)
+		self.log2 = Log('in_processlog.csv', 'url', 'timestamp', echo=False)
 
 		#create a cache for check the page that has already been visited
 
@@ -123,7 +124,7 @@ class Crawler(threading.Thread):
 
 				htmlContent = bs(content,'html.parser')
 				#append link that have next here also
-				self.log.enter(current_link, str(time.perf_counter_ns()))
+				self.log.enter(current_link, str(time.time_ns()))
 				next_link =self.processPage(htmlContent,current_link)
 				# need to find a way to score this part
 				content_blocks = htmlContent.select('div,h1,h2,h3,h4,h5,h6,p,address,center,ul,dt,table,th,tr,td')
@@ -152,7 +153,7 @@ class Crawler(threading.Thread):
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
 		if (not next_link) and self.isRelevantDataPage(content,link):
-			self.log.enter(link, str(time.perf_counter_ns()))
+			self.log2.enter(link, str(time.time_ns()))
 			self.savePage(link,content)
 			# return all_links
 		# if next_link:
