@@ -9,6 +9,9 @@ import pickle
 import os
 from sklearn.metrics.pairwise import cosine_similarity
 
+category_vectors = {}
+category_models ={}
+
 def getKeywords():
 	excludeWords = 'the is of for and new health'.split()
 	excludePattern =r'\b('+'|'.join(excludeWords)+r')\b'
@@ -92,29 +95,63 @@ def getVectors(all_data,category):
 	result = model.fit(doc)
 	return result,doc
 
-def getScore(text):
+def getScore(text,classify=False,threshold=False):
+	global category_vectors
+	global category_models
+
+	if len(category_vectors)==0:
+		loadAllCategoryVector();
+
+	if len(category_models) == 0:
+		loadAllModels()
+
+	maxScore = 0
 	folder='models/'
 	files = os.listdir(folder)
 	result=[]
-	for f in files:
-		path = folder+f
-		if os.path.isdir(path):
-			continue
-		with open(path,'rb') as fl:
-			item = pickle.load(fl)
+	for category in category_models:
+		try:
 			vector = item.transform([text])
-			category = f.replace('_model.bat','')
-			# category = filename[0]
 			other = loadCategoryVector(category)
 			score = getSimilarityScore(vector,other)
-			result.append(score)
-	return max(result)
+			if classify and threshold and score >= threshold:
+				return True
+			if score > maxScore:
+				maxScore = score
+		except Exception as e:
+				continue
+	if classify:
+		return False
+	return maxScore
+
+def loadAllModels():
+	global category_models
+	directory = "models/"
+	for f in os.listdir(directory):
+		if os.path.isdir(directory+f):
+			continue
+		key = f.replace("_model.bat",'')
+		with open(directory+f,'rb') as fl:
+			temp = pickle.load(fl)
+		category_models[key]=temp
+
+
+def loadAllCategoryVector():
+	global category_vectors
+	directory = "models/vectors/"
+	for f in os.listdir(directory):
+		key = f.replace("_model.vec",'')
+		with open(directory+f,'rb') as fl:
+			temp = pickle.load(fl)
+		category_vectors[key]=temp
 
 def loadCategoryVector(category):
-	folder = 'models/vectors/'+category+"_model.vec"
-	with open(folder,'rb') as fl:
-		result = pickle.load(fl)
-		return result
+	global category_vectors
+	return category_vectors[category]
+	# folder = 'models/vectors/'+category+"_model.vec"
+	# with open(folder,'rb') as fl:
+	# 	result = pickle.load(fl)
+	# 	return result
 
 def getSimilarityScore(first, second):
 	result = cosine_similarity(first,second)
@@ -129,12 +166,12 @@ def classify(text):
 	'''
 	threshold=0.5
 	if isinstance(text,str):
-		result = getScore(text)
-		return result >= threshold
+		return getScore(text,classify=True, threshold=threshold)
+		# return result >= threshold
 	result=[]
 	for t in text:
-		temp = getScore(t)
-		result.append(temp > threshold)
+		temp = getScore(t,classify=True, threshold=threshold)
+		result.append(temp)
 	return result
 
 def getTestScores():

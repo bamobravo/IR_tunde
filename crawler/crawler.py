@@ -137,7 +137,7 @@ class Crawler(threading.Thread):
 				# time.sleep(2)
 			except Exception as e:
 				print(e)
-				exit()
+				# exit()
 				continue
 
 	def processPage(self,content, link):
@@ -213,6 +213,7 @@ class Crawler(threading.Thread):
 
 
 	def savePage(self,link,content):
+		print('saving page')
 		if self.DBType=='sqllite':
 			return self.saveSqllite(link,content)
 		elif self.DBType=='mongo':
