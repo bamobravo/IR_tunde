@@ -13,6 +13,7 @@ import pymongo
 import pickle
 from itertools import cycle
 from lxml.html import fromstring
+from logger import Log
 
 
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
@@ -42,19 +43,22 @@ class Crawler(threading.Thread):
 		self.proxy_pool = cycle(proxies)
 		self.use_proxy =proxy
 
+		self.log = Log('in_crawlinglog.csv', 'url', 'timestamp', echo=False)
+		self.log2 = Log('in_processlog.csv', 'url', 'timestamp', echo=False)
+
 		#create a cache for check the page that has already been visited
 
 	def get_proxies(self):
-	  url = 'https://free-proxy-list.net/'
-	  response = requests.get(url)
-	  parser = fromstring(response.text)
-	  proxies = set()
-	  for i in parser.xpath('//tbody/tr')[:100]:
-	    if i.xpath('.//td[7][contains(text(),"yes")]'):
-	      #Grabbing IP and corresponding PORT
-	      proxy = ":".join([i.xpath('.//td[1]/text()')[0], i.xpath('.//td[2]/text()')[0]])
-	      proxies.add(proxy)
-	  return proxies
+		url = 'https://free-proxy-list.net/'
+		response = requests.get(url)
+		parser = fromstring(response.text)
+		proxies = set()
+		for i in parser.xpath('//tbody/tr')[:100]:
+			if i.xpath('.//td[7][contains(text(),"yes")]'):
+				#Grabbing IP and corresponding PORT
+				proxy = ":".join([i.xpath('.//td[1]/text()')[0], i.xpath('.//td[2]/text()')[0]])
+				proxies.add(proxy)
+		return proxies
 
 	def get_request(self,url):
 		try:
@@ -65,7 +69,7 @@ class Crawler(threading.Thread):
 		except Exception as e:
 			print(e)
 			return False
-		
+
 
 	def make_request(self,url,rotate=True):
 		result = self.get_request(url)
@@ -93,7 +97,7 @@ class Crawler(threading.Thread):
 			if not all_links:
 				continue
 			links.append((all_links,score))
-			
+
 		return self.cleanLinks(links)
 
 	def cleanLinks(self, links):
@@ -118,7 +122,7 @@ class Crawler(threading.Thread):
 				if isinstance(current_link,tuple):
 					current_link= current_link[0]
 				print('visiting: ',current_link)
-				#check if teh page has been visited 
+				#check if teh page has been visited
 				if self.cache.isVisited(current_link):
 					print('already visited', current_link,'\n')
 					continue
@@ -126,6 +130,7 @@ class Crawler(threading.Thread):
 
 				htmlContent = bs(content,'html.parser')
 				to_add=[]
+				self.log.enter(current_link, str(time.time_ns()))
 				if self.method=='bfs':
 					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
 					all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
@@ -165,6 +170,7 @@ class Crawler(threading.Thread):
 				all_links.append(next_link)
 
 		if (not next_link) and self.isRelevantDataPage(content,link):
+			self.log2.enter(link, str(time.time_ns()))
 			self.savePage(link,content)
 			# return all_links
 		# if next_link:
@@ -258,7 +264,7 @@ class Crawler(threading.Thread):
 				# exit()
 				return result.inserted_id
 		except Exception as e:
-			# return 
+			# return
 			print(e)
 			# exit()
 			return False
@@ -334,14 +340,14 @@ class Crawler(threading.Thread):
 			return ''
 		text = body[0].get_text()
 		return text
-		
+
 	def linkFromJSNext(self,link,element):
 		gotoText = element.get('onclick')
 		temp = re.search(r'\d+',gotoText)
 		if not temp:
 			return False
 		temp = temp.group()
-		pat = r'page=\d+'	
+		pat = r'page=\d+'
 		result = re.sub(pat,'page='+temp,link) if re.search(pat,link) else link+'&page='+temp
 		return result
 
