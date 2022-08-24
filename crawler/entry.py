@@ -16,7 +16,7 @@ def startCrawler():
 	# for site in sites:
 	# use three threads to make things a bit faster
 	for x in range(1):
-		Crawler(visitedData,sites,'site').start()
+		Crawler(visitedData,sites,'site',False, 'bfs').start()
 		# time.sleep(10)
 
 

@@ -17,10 +17,14 @@ from lxml.html import fromstring
 
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
-	"""docstring for Crawler"""
-	def __init__(self,cache, sites,site_type,proxy=False):
+	"""
+		docstring for Crawler
+		The method can either be bfs or block. Where block is the enhanced algorithm and bfs is breadth first search
+	"""
+	def __init__(self,cache, sites,site_type,proxy=False,method='bfs'):
 		threading.Thread.__init__(self)
 		visiteds = cache.loadVisited()
+		self.method = method
 		try:
 			with open('all_links.data','rb') as fl:
 				# load the visited links too and remove them once and for all, so you can focus on the links that are yet to be visited
@@ -111,6 +115,8 @@ class Crawler(threading.Thread):
 			next_score =0.5
 			try:
 				current_link = self.links.pop(0)
+				if isinstance(current_link,tuple):
+					current_link= current_link[0]
 				print('visiting: ',current_link)
 				#check if teh page has been visited 
 				if self.cache.isVisited(current_link):
@@ -119,16 +125,24 @@ class Crawler(threading.Thread):
 				content = self.make_request(current_link) if self.use_proxy else requests.get(current_link).content
 
 				htmlContent = bs(content,'html.parser')
-				#append link that have next here also
-				next_link =self.processPage(htmlContent,current_link)
-				# need to find a way to score this part
-				content_blocks = htmlContent.select('div,h1,h2,h3,h4,h5,h6,p,address,center,ul,dt,table,th,tr,td')
-				to_add = self.getRankedLinks(content_blocks,current_link)
-				if next_link:
-					to_add.append((next_link,next_score))
+				to_add=[]
+				if self.method=='bfs':
+					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
+					all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+					to_add =self.processPage(htmlContent,current_link,all_links)
+				else:
+					next_link =self.processPage(htmlContent,current_link)
+					# need to find a way to score this part
+					content_blocks = htmlContent.select('div,h1,h2,h3,h4,h5,h6,p,address,center,ul,dt,table,th,tr,td')
+					to_add = self.getRankedLinks(content_blocks,current_link)
+					if next_link:
+						to_add.append((next_link,next_score))
 				self.cache.addVisited(current_link)
 				if to_add:
 					self.links+=to_add
+					# the link should be sorted if it is not bfs
+					if self.method=='block':
+						self.links = sorted(self.links, key=lambda x: x[1] if isinstance(x,tuple) else 0,reverse=True)
 				# save the visited links
 				#if ther are changes
 				if to_add:
@@ -140,20 +154,23 @@ class Crawler(threading.Thread):
 				# exit()
 				continue
 
-	def processPage(self,content, link):
+	def processPage(self,content, link,all_links=False):
 		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
 		next_link = self.getNextLink(content,link)
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
+			if all_links:
+				all_links.append(next_link)
+
 		if (not next_link) and self.isRelevantDataPage(content,link):
 			self.savePage(link,content)
 			# return all_links
 		# if next_link:
 		# 	all_links.append(next_link)
 		# return all_links
-		return next_link
+		return all_links if all_links else next_link
 
 
 	def hasDownloadAction(self,content,link):
