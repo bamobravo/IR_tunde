@@ -5,8 +5,6 @@ import time
 import re
 import sys
 import json
-sys.path.append('classifier')
-import crawler_classifier as classifier
 import sqlite3
 import time
 import pymongo
@@ -16,18 +14,22 @@ from lxml.html import fromstring
 from logger import Log
 
 
+
+
 # harvest ratio: rate where relevant webpages were acquired and irrelevant web page discarded
 class Crawler(threading.Thread):
 	"""
 		docstring for Crawler
 		The method can either be bfs or block. Where block is the enhanced algorithm and bfs is breadth first search
 	"""
-	def __init__(self,cache, sites,site_type,proxy=False,method='bfs'):
+	def __init__(self, classifier,cache, sites,site_type,proxy=False,method='bfs',suffix=''):
 		threading.Thread.__init__(self)
 		visiteds = cache.loadVisited()
 		self.method = method
+		self.classifier = classifier
+		self.all_link_path =f'all_links{suffix}.data'
 		try:
-			with open('all_links.data','rb') as fl:
+			with open(self.all_link_path,'rb') as fl:
 				# load the visited links too and remove them once and for all, so you can focus on the links that are yet to be visited
 				visiteds = set(visiteds)
 				temp = set(sites+pickle.load(fl)).difference(visiteds)
@@ -35,7 +37,8 @@ class Crawler(threading.Thread):
 		except Exception as e:
 			print(e)
 			self.links = sites
-		self.site_type=site_type
+
+		self.site_type = site_type
 		self.cache = cache
 		self.database_path = "./data.db"
 		self.DBType='mongo'
@@ -43,8 +46,8 @@ class Crawler(threading.Thread):
 		self.proxy_pool = cycle(proxies)
 		self.use_proxy =proxy
 
-		self.log = Log('in_crawlinglog.csv', 'url', 'timestamp', echo=False)
-		self.log2 = Log('in_processlog.csv', 'url', 'timestamp', echo=False)
+		self.log = Log(f'in_crawlinglog{suffix}.csv', 'url','timestamp', echo=False)
+		self.log2 = Log(f'in_processlog{suffix}.csv', 'url','category', 'timestamp', echo=False)
 
 		#create a cache for check the page that has already been visited
 
@@ -68,6 +71,7 @@ class Crawler(threading.Thread):
 
 		except Exception as e:
 			print(e)
+			print('get quest')
 			return False
 
 
@@ -81,7 +85,7 @@ class Crawler(threading.Thread):
 		return result
 
 	def getBlockScore(self,block_text):
-		score = classifier.getScore(block_text)
+		score, category = self.classifier.getScore(block_text)
 		return score
 
 	def getRankedLinks(self,content_blocks,current_link):
@@ -115,11 +119,14 @@ class Crawler(threading.Thread):
 
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
+
 		while len(self.links) > 0:
 			next_score =0.5
 			try:
 				current_link = self.links.pop(0)
 				if isinstance(current_link,tuple):
+					print("tuple here")
+					print(current_link)
 					current_link= current_link[0]
 				print('visiting: ',current_link)
 				#check if teh page has been visited
@@ -130,11 +137,12 @@ class Crawler(threading.Thread):
 
 				htmlContent = bs(content,'html.parser')
 				to_add=[]
-				self.log.enter(current_link, str(time.time_ns()))
+				
 				if self.method=='bfs':
 					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
 					all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
-					to_add =self.processPage(htmlContent,current_link,all_links)
+					# extract other links from current page also
+					to_add = self.processPage(htmlContent,current_link,all_links)
 				else:
 					next_link =self.processPage(htmlContent,current_link)
 					# need to find a way to score this part
@@ -142,7 +150,7 @@ class Crawler(threading.Thread):
 					to_add = self.getRankedLinks(content_blocks,current_link)
 					if next_link:
 						to_add.append((next_link,next_score))
-				self.cache.addVisited(current_link)
+
 				if to_add:
 					self.links+=to_add
 					# the link should be sorted if it is not bfs
@@ -151,8 +159,10 @@ class Crawler(threading.Thread):
 				# save the visited links
 				#if ther are changes
 				if to_add:
-					with open('all_links.data','wb') as fl:
+					with open(self.all_link_path,'wb') as fl:
 						pickle.dump(self.links,fl)
+				self.cache.addVisited(current_link)
+				self.log.enter(current_link, str(time.time_ns()))
 				# time.sleep(2)
 			except Exception as e:
 				print(e)
@@ -169,14 +179,15 @@ class Crawler(threading.Thread):
 			if all_links:
 				all_links.append(next_link)
 
-		if (not next_link) and self.isRelevantDataPage(content,link):
-			self.log2.enter(link, str(time.time_ns()))
-			self.savePage(link,content)
-			# return all_links
-		# if next_link:
-		# 	all_links.append(next_link)
-		# return all_links
-		return all_links if all_links else next_link
+		if not next_link:
+			status, category = self.isRelevantDataPage(content,link)
+
+			if status:
+				self.log2.enter(link,category, str(time.time_ns()))
+				self.savePage(link, category, content)
+
+		result = all_links if all_links else [next_link]
+		return result
 
 
 	def hasDownloadAction(self,content,link):
@@ -194,7 +205,10 @@ class Crawler(threading.Thread):
 	def isRelevantDataPage(self,content,link):
 		#convert content to text first
 		# search for meta information and use the classifier module to determine how relavant the page is
-		return classifier.classify(content)
+		print('chgecking relevance')
+		text = content.get_text()
+		result = self.classifier.classify(text)
+		return result
 		# threshold =3
 		# text = self.extractMainText(content)
 		# metaPattern=r'\b(metadata|data\.json|publisher|licen(s|c)e|xls|csv|xlsx|pdf|(\w+ )+:$\b)'
@@ -235,17 +249,18 @@ class Crawler(threading.Thread):
 		return result.rowcount
 
 
-	def savePage(self,link,content):
+	def savePage(self,category,link,content):
 		print('saving page')
 		if self.DBType=='sqllite':
-			return self.saveSqllite(link,content)
+			return self.saveSqllite(link,category,content)
 		elif self.DBType=='mongo':
-			return self.saveMongo(link,content)
+			return self.saveMongo(link,category,content)
 
 
-	def saveMongo(self,link,content):
+	def saveMongo(self,link,category,content):
 		# get the the title of the document first
 		conn_str ='mongodb://localhost'
+		conn_str = "mongodb+srv://tunlamania:oloriebi@cluster0.gipgzjs.mongodb.net/?retryWrites=true&w=majority"
 		client = pymongo.MongoClient(conn_str,serverSelectionTimeoutMS=5000)
 		try:
 			db = client['IR_crawled_data']
@@ -258,7 +273,7 @@ class Crawler(threading.Thread):
 				metadata = self.extractMetadata(link,content)
 				text_content = content.get_text()
 				html = str(content)
-				document ={'title':heading,"metadata":metadata,'link':link,'text':text_content,'raw':html}
+				document ={'title':heading, "category":category, "metadata":metadata, 'link':link, 'text':text_content, 'raw':html}
 				result =collection.insert_one(document)
 				print('document inserted')
 				# exit()
@@ -267,6 +282,7 @@ class Crawler(threading.Thread):
 			# return
 			print(e)
 			# exit()
+			print('saving mongo')
 			return False
 
 	def saveSqllite(self, link, content):
@@ -317,6 +333,7 @@ class Crawler(threading.Thread):
 				result['summary']=summary_text
 			return json.dumps(result)
 		except Exception as e:
+			print(e)
 			return False
 
 	def extractMetadata(self,base,content):
@@ -332,6 +349,7 @@ class Crawler(threading.Thread):
 			return self.getMetadata(base,content)
 		except Exception as e:
 			print(e)
+			print('na meta')
 			return False
 
 	def extractMainText(self,content):

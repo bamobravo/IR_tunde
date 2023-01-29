@@ -31,12 +31,14 @@ class Log:
 		4,2005434200
 		>>>
 		"""
+		directory ='log/'
 		self.filename = filename if not datemarkfilename else self.__rename(filename, f"({datetime.now().strftime('%Y-%m-%d_%H-%M-%S')})")
+		self.filename =directory+filename
 		self.headers = headers
 		self.echo = echo
 		self.__entrypresent = False
 
-		with open(self.filename, 'w') as logfile:
+		with open(self.filename, 'a') as logfile:
 			logfile.write(",".join(self.headers) + "\n")
 
 	def __enter__(self):
