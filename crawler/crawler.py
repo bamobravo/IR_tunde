@@ -96,7 +96,7 @@ class Crawler(threading.Thread):
 		for block in content_blocks:
 			text = block.get_text()
 			score = self.getBlockScore(text)
-			list_items= list(set(block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')))
+			list_items= list(set(block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result .govuk-link,.subjects a,.panel-body a')))
 			all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 			if not all_links:
 				continue
@@ -139,8 +139,8 @@ class Crawler(threading.Thread):
 				to_add=[]
 				
 				if self.method=='bfs':
-					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,dgu-results__result a.govuk-link,.subjects a,.panel-body a')
-					all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result a.govuk-link,.subjects a,.panel-body a')
+					all_links = [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
 					# extract other links from current page also
 					to_add = self.processPage(htmlContent,current_link,all_links)
 				else:
@@ -165,19 +165,20 @@ class Crawler(threading.Thread):
 				self.log.enter(current_link, str(time.time_ns()))
 				# time.sleep(2)
 			except Exception as e:
+				raise e
 				print(e)
 				# exit()
 				continue
 
-	def processPage(self,content, link,all_links=False):
+	def processPage(self,content, link,all_links=[]):
 		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
 		next_link = self.getNextLink(content,link)
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
-			if all_links:
-				all_links.append(next_link)
+			# if all_links:
+			all_links.append(next_link)
 
 		if not next_link:
 			status, category = self.isRelevantDataPage(content,link)
@@ -186,7 +187,8 @@ class Crawler(threading.Thread):
 				self.log2.enter(link,category, str(time.time_ns()))
 				self.savePage(link, category, content)
 
-		result = all_links if all_links else [next_link]
+		result = all_links 
+		print(result)
 		return result
 
 
@@ -205,7 +207,6 @@ class Crawler(threading.Thread):
 	def isRelevantDataPage(self,content,link):
 		#convert content to text first
 		# search for meta information and use the classifier module to determine how relavant the page is
-		print('chgecking relevance')
 		text = content.get_text()
 		result = self.classifier.classify(text)
 		return result
@@ -259,7 +260,7 @@ class Crawler(threading.Thread):
 
 	def saveMongo(self,link,category,content):
 		# get the the title of the document first
-		conn_str ='mongodb://localhost'
+		# conn_str ='mongodb://localhost'
 		conn_str = "mongodb+srv://tunlamania:oloriebi@cluster0.gipgzjs.mongodb.net/?retryWrites=true&w=majority"
 		client = pymongo.MongoClient(conn_str,serverSelectionTimeoutMS=5000)
 		try:
@@ -348,7 +349,9 @@ class Crawler(threading.Thread):
 			# what if the metadata does not contain a link to a file
 			return self.getMetadata(base,content)
 		except Exception as e:
+			raise e
 			print(e)
+
 			print('na meta')
 			return False
 
@@ -375,7 +378,7 @@ class Crawler(threading.Thread):
 			temp = content.find('a',{'rel':'next'})
 		if not temp:
 			return False
-		result = temp[0].get('href')
+		result = (temp[0] if isinstance(temp, list) else temp).get('href')
 		if result.strip()=='#':
 			return self.linkFromJSNext(link,temp[0])
 		return result
