@@ -4,3 +4,4 @@ data/*
 data.db
 ir/*
 *.pyc
+old_new_models/

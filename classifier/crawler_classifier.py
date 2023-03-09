@@ -125,7 +125,7 @@ class Classifier(object):
 		'''
 			This will return true or false based on the threshold used
 		'''
-		threshold=0.5
+		threshold=0.35
 		if isinstance(text,str):
 			return self.getScore(text,classify=True, threshold=threshold)
 			# return result >= threshold
@@ -152,6 +152,8 @@ def preprocess(item):
 
 ignoreList = ['site','website','description','day','database','information','article'] + commonWords
 ignoreList =[preprocess(x) for x in ignoreList]
+
+
 def read_csv(filename):
 	result=[]
 	with open(filename,'r') as fl:
@@ -203,7 +205,7 @@ def saveVector(model,category,text):
 def getVectors(all_data,category):
 	data = all_data[all_data['category']==category]
 	doc = [x for x in data['all_text'].values.tolist() if x and isinstance(x,str) and x.strip()]
-	model = TfidfVectorizer(strip_accents='ascii', stop_words=ignoreList,max_features=1000, preprocessor= preprocess)
+	model = TfidfVectorizer(strip_accents='ascii', preprocessor = preprocess)
 	result = model.fit(doc)
 	return result,doc
 
@@ -211,10 +213,12 @@ def getVectors(all_data,category):
 
 # jsonFile ='dmoz_links.json'
 # outputfile ='dmoz_links.csv'
+
 # splitTestTrain(outputfile)
 # convertToCSV(jsonFile,outputfile)	
 # data = pd.read_csv(outputfile)
 # data.heads()
+
 # print(getTestScores())
 # buildVectors()
 # exit()

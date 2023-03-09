@@ -10,6 +10,7 @@ import crawler_classifier as clf
 
 #ckan.org is a data portal software
 sites =['https://open.canada.ca/en/open-data','https://catalog.data.gov/dataset','https://data.gov.uk']
+# sites =['https://open.canada.ca/en/open-data']
 
 # sites=['https://open.canada.ca/data/en/dataset/0313f880-492c-4f4e-95ef-f53e4216576d']
 # sites =['https://data.gov.uk/search?filters%5Btopic%5D=Mapping&page=12']
@@ -22,8 +23,10 @@ def startCrawler():
 	# for site in sites:
 	# use three threads to make things a bit faster
 	for index,x in enumerate(sites):
-
-		Crawler(classifier, visitedData,[x],'site',False, method,"_"+method+'_'+str(index+1)).start()
+		tempThread = Crawler(classifier, visitedData,[x],'site',False, method,"_"+method+'_'+str(index+1))
+		tempThread.start()
+		# tempThread.join()
+		print(f'starting {index}')
 
 
 startCrawler()

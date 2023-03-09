@@ -12,6 +12,7 @@ import pickle
 from itertools import cycle
 from lxml.html import fromstring
 from logger import Log
+from datetime import datetime
 
 
 
@@ -48,7 +49,6 @@ class Crawler(threading.Thread):
 
 		self.log = Log(f'in_crawlinglog{suffix}.csv', 'url','timestamp', echo=False)
 		self.log2 = Log(f'in_processlog{suffix}.csv', 'url','category', 'timestamp', echo=False)
-
 		#create a cache for check the page that has already been visited
 
 	def get_proxies(self):
@@ -71,7 +71,6 @@ class Crawler(threading.Thread):
 
 		except Exception as e:
 			print(e)
-			print('get quest')
 			return False
 
 
@@ -119,14 +118,11 @@ class Crawler(threading.Thread):
 
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
-
 		while len(self.links) > 0:
 			next_score =0.5
 			try:
 				current_link = self.links.pop(0)
 				if isinstance(current_link,tuple):
-					print("tuple here")
-					print(current_link)
 					current_link= current_link[0]
 				print('visiting: ',current_link)
 				#check if teh page has been visited
@@ -137,10 +133,11 @@ class Crawler(threading.Thread):
 
 				htmlContent = bs(content,'html.parser')
 				to_add=[]
-				
+
 				if self.method=='bfs':
 					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result a.govuk-link,.subjects a,.panel-body a')
-					all_links = [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+
+					all_links = [self.wrapLink(current_link, x.get('href')) for x in list_items if x]
 					# extract other links from current page also
 					to_add = self.processPage(htmlContent,current_link,all_links)
 				else:
@@ -165,7 +162,6 @@ class Crawler(threading.Thread):
 				self.log.enter(current_link, str(time.time_ns()))
 				# time.sleep(2)
 			except Exception as e:
-				raise e
 				print(e)
 				# exit()
 				continue
@@ -174,6 +170,7 @@ class Crawler(threading.Thread):
 		#this will basically decide if to save the page or not based on the content of the page
 		# check if the page has a new page, then add the new page to the list of pages to be visited
 		# convert to text and save with the link as the first thing on the page
+		# link is the current_link
 		next_link = self.getNextLink(content,link)
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
@@ -185,10 +182,9 @@ class Crawler(threading.Thread):
 
 			if status:
 				self.log2.enter(link,category, str(time.time_ns()))
-				self.savePage(link, category, content)
+				self.savePage(category,link, content)
 
 		result = all_links 
-		print(result)
 		return result
 
 
@@ -274,7 +270,7 @@ class Crawler(threading.Thread):
 				metadata = self.extractMetadata(link,content)
 				text_content = content.get_text()
 				html = str(content)
-				document ={'title':heading, "category":category, "metadata":metadata, 'link':link, 'text':text_content, 'raw':html}
+				document ={'time':datetime.now().isoformat(), 'title':heading, "category":category, "metadata":metadata, 'link':link, 'text':text_content, 'raw':html}
 				result =collection.insert_one(document)
 				print('document inserted')
 				# exit()
@@ -283,7 +279,6 @@ class Crawler(threading.Thread):
 			# return
 			print(e)
 			# exit()
-			print('saving mongo')
 			return False
 
 	def saveSqllite(self, link, content):
@@ -349,14 +344,12 @@ class Crawler(threading.Thread):
 			# what if the metadata does not contain a link to a file
 			return self.getMetadata(base,content)
 		except Exception as e:
-			raise e
-			print(e)
-
-			print('na meta')
+			# print(e)
+			# print('na meta')
 			return False
 
 	def extractMainText(self,content):
-		body = content.select('main,article.prose')
+		body = content.select('main, article.prose')
 		if not body:
 			return ''
 		text = body[0].get_text()
@@ -384,15 +377,24 @@ class Crawler(threading.Thread):
 		return result
 
 	def wrapLink(self,current_link,link):
-		pattern =r'(https?://|www\.)[a-z0-9.\-_]+'
-		if re.match(pattern,link,re.I):
+		pattern =r'^((https?://(www\.)?)\w+(\.\w+){0,2}\.(com|org|gov|uk|ca|edu|net))'
+		mtc = re.match(pattern,link,re.I)
+		if mtc:
 			return link
-		base = re.match(pattern,current_link,re.I)
-		base =base.group()
-		if not base:
-			return link
+		basePattern = re.match(pattern,current_link,re.I)
+		if not basePattern:
+			print('there is a problem here, I will be stopping for inspection')
+			exit()
+		base = basePattern.group()
+
+		# temp = current_link.rsplit('[^/]/[^/]',maxsplit=1)
+		# base = temp[0]
+
 		result = (base+link) if link[0]=='/' else (base+"/"+link)
+		# print(f'the resulting link from {link} is {result} and current link is {current_link}')
+		# exit()
 		return result
+
 
 	def run(self):
 		self.start_crawling()
