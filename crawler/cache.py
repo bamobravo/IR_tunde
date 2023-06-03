@@ -3,8 +3,8 @@ import os
 
 class Cache:
 	"""docstring for Cache"""
-	def __init__(self,saveRate=1):
-		self.path = 'visited.visited'
+	def __init__(self,suffix='',saveRate=1):
+		self.path = f'visited{suffix}.visited'
 		self.saveRate = saveRate
 		self.visited = self.loadVisited()
 		self.new_added = False

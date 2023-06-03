@@ -67,7 +67,7 @@ class Classifier(object):
 
 	def getScore(self, text,classify=False,threshold=False):			
 		maxScore = 0
-		files = os.listdir(self.directory)
+		# files = os.listdir(self.directory)
 		result=[]
 		selectedCategory =''
 		for category in self.category_models:
@@ -80,7 +80,6 @@ class Classifier(object):
 				# 	return True
 				if score > maxScore:
 					maxScore = score
-					print(maxScore)
 					selectedCategory = category
 			except Exception as e:
 				print(e)
@@ -89,7 +88,7 @@ class Classifier(object):
 		# if classify:
 		# 	return False
 		result = maxScore > threshold if classify else maxScore
-		print(selectedCategory)
+		# print(selectedCategory)
 		return result, selectedCategory
 
 	def loadAllModels(self):

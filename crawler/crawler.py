@@ -24,8 +24,10 @@ class Crawler(threading.Thread):
 		The method can either be bfs or block. Where block is the enhanced algorithm and bfs is breadth first search
 	"""
 	def __init__(self, classifier,cache, sites,site_type,proxy=False,method='bfs',suffix=''):
+		start = time.time()
 		threading.Thread.__init__(self)
 		visiteds = cache.loadVisited()
+		# exit()
 		self.method = method
 		self.classifier = classifier
 		self.all_link_path =f'all_links{suffix}.data'
@@ -38,6 +40,8 @@ class Crawler(threading.Thread):
 		except Exception as e:
 			print(e)
 			self.links = sites
+		if self.method =='block':
+			self.links = sorted(self.links,key=lambda x: x[1],reverse=True)
 
 		self.site_type = site_type
 		self.cache = cache
@@ -70,6 +74,7 @@ class Crawler(threading.Thread):
 			return result
 
 		except Exception as e:
+			# raise e
 			print(e)
 			return False
 
@@ -79,7 +84,6 @@ class Crawler(threading.Thread):
 		while not result:
 			print('retrying : '+url)
 			result = self.get_request(url)
-
 		result= result.content
 		return result
 
@@ -94,14 +98,22 @@ class Crawler(threading.Thread):
 		result =[]
 		for block in content_blocks:
 			text = block.get_text()
+
+			# score_time = time.time()
 			score = self.getBlockScore(text)
-			list_items= list(set(block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result .govuk-link,.subjects a,.panel-body a')))
+			# print('scoring time: ', time.time() - score_time)
+			list_items= block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result .govuk-link,.subjects a,.panel-body a')
+			# list_items= list(set(block.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result .govuk-link,.subjects a,.panel-body a')))
+			# wrap_time = time.time()
 			all_links= [self.wrapLink(current_link,x.get('href')) for x in list_items if x]
+			# print('time to perform wrapping: ', time.time() - wrap_time)
 			if not all_links:
 				continue
 			links.append((all_links,score))
-
-		return self.cleanLinks(links)
+		# clean_time = time.time()
+		result = self.cleanLinks(links)
+		# print('cleaning time: ', time.time() - clean_time)
+		return result
 
 	def cleanLinks(self, links):
 		minVisited =[]
@@ -116,55 +128,141 @@ class Crawler(threading.Thread):
 
 		return result
 
+	def selector(self,tag):
+		items =['div','h1','h2','h3','h4','h5','h6','p','address','center','ul','dt','table','th','tr','td']
+		return tag.name in items and tag.find('a')
+
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
 		while len(self.links) > 0:
-			next_score =0.5
+			next_score =0.01
 			try:
 				current_link = self.links.pop(0)
 				if isinstance(current_link,tuple):
 					current_link= current_link[0]
 				print('visiting: ',current_link)
+
+				# start = time.time()
 				#check if teh page has been visited
+				# visit_start = time.time()
 				if self.cache.isVisited(current_link):
 					print('already visited', current_link,'\n')
 					continue
+				# print('done checking visited: ',time.time() - visit_start)
+				# request_start = time.time()
 				content = self.make_request(current_link) if self.use_proxy else requests.get(current_link).content
 
 				htmlContent = bs(content,'html.parser')
+				# print('time between network request:', time.time() - start)
 				to_add=[]
+				
+				# print('done making request: ', time.time() - request_start)
 
 				if self.method=='bfs':
 					list_items= htmlContent.select('li.dataset-item .dataset-heading a,ul.govuk-list.dgu-topics__list > li a,.dgu-results__result a.govuk-link,.subjects a,.panel-body a')
-
 					all_links = [self.wrapLink(current_link, x.get('href')) for x in list_items if x]
 					# extract other links from current page also
 					to_add = self.processPage(htmlContent,current_link,all_links)
 				else:
+					# process_start = time.time()
 					next_link =self.processPage(htmlContent,current_link)
+					# print('time taken to process: ', time.time() - process_start)
 					# need to find a way to score this part
-					content_blocks = htmlContent.select('div,h1,h2,h3,h4,h5,h6,p,address,center,ul,dt,table,th,tr,td')
+					# select_time = time.time()
+					content_blocks = htmlContent.find_all(self.selector)
+					# print('time taken to select : ', time.time() - select_time)
+					# rank_time = time.time()
+					# this seems like the bottleneck place
 					to_add = self.getRankedLinks(content_blocks,current_link)
+					# print('time taken to rank: ', time.time() - rank_time)
 					if next_link:
-						to_add.append((next_link,next_score))
+						# insert_index_time = time.time()
+						insertIndex = self.getInsertIndex(next_score, to_add)
+						# print('time taken to fetch insert index: ',time.time() -insert_index_time )
+						items = next_link if isinstance(next_link,list) else [next_link]
+						# insert_time = time.time()
+						for itm in items:
+							to_add.insert(insertIndex,(itm,next_score))
+					# print('time taken to insert: ', time.time() - insert_time)
 
 				if to_add:
-					self.links+=to_add
+					
 					# the link should be sorted if it is not bfs
+
 					if self.method=='block':
-						self.links = sorted(self.links, key=lambda x: x[1] if isinstance(x,tuple) else 0,reverse=True)
+						# mer_start = time.time()
+						self.links = self.mergeSorted(self.links,to_add)
+						# print('time to merge sort: ', time.time() - mer_start)
+
+					else:
+						self.links+=to_add
+						# self.links = sorted(self.links, key=lambda x: x[1] if isinstance(x,tuple) else 0,reverse=True)
+						# self.links = [x[0] for x in tempLinks]
+
 				# save the visited links
 				#if ther are changes
+				# print('done processing..')
+				# save_time = time.time()
 				if to_add:
 					with open(self.all_link_path,'wb') as fl:
 						pickle.dump(self.links,fl)
+				# print('done saving : ',time.time() - save_time)
+				# exit()
+				print('adding visited')
 				self.cache.addVisited(current_link)
 				self.log.enter(current_link, str(time.time_ns()))
+				print('done saving visit and login')
 				# time.sleep(2)
 			except Exception as e:
+				# raise e
 				print(e)
 				# exit()
 				continue
+		print('process completed')
+
+	def mergeSorted(self,first, second):
+		# the sort should be done in the reverse order
+		if len(first) == 0:
+			return second
+
+		if len(second)==0:
+			return first
+
+		if first[-1][1] >= second[0][1]:
+			return first + second
+
+		if second[-1][1] >= first[0][1]:
+			return second + first
+
+		current_index =0
+		for item in second:
+			# look first the best index to place the item in the first one
+			# for i in range(current_index,len(first)):
+			while current_index < len(first):
+				if item[1] > first[current_index][1]:
+					first.insert(current_index,item)
+					current_index+=2
+					continue
+				current_index+=1
+			first.append(item)
+			current_index = len(first)
+
+		return first
+
+
+	def getInsertIndex(self,score, items):
+		if not items:
+			return -1
+
+		if score > items[0][1]:
+			return 0
+		if score < items[-1][1]:
+			return -1
+		n= len(items)
+		for i in range(n):
+			index = n - (i +1)
+			if score > item[index][1]:
+				return index +1
 
 	def processPage(self,content, link,all_links=[]):
 		#this will basically decide if to save the page or not based on the content of the page
@@ -172,6 +270,7 @@ class Crawler(threading.Thread):
 		# convert to text and save with the link as the first thing on the page
 		# link is the current_link
 		next_link = self.getNextLink(content,link)
+
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
 			# if all_links:
@@ -247,7 +346,7 @@ class Crawler(threading.Thread):
 
 
 	def savePage(self,category,link,content):
-		print('saving page')
+		# print('saving page')
 		if self.DBType=='sqllite':
 			return self.saveSqllite(link,category,content)
 		elif self.DBType=='mongo':
@@ -260,7 +359,7 @@ class Crawler(threading.Thread):
 		conn_str = "mongodb+srv://tunlamania:oloriebi@cluster0.gipgzjs.mongodb.net/?retryWrites=true&w=majority"
 		client = pymongo.MongoClient(conn_str,serverSelectionTimeoutMS=5000)
 		try:
-			db = client['IR_crawled_data']
+			db = client['IR_crawled_data_block']
 			collection = db['pages']
 			heading=''
 			title_element = content.select("h1[itemprop='name'],.column-two-thirds h1,main.container h1")
@@ -276,6 +375,7 @@ class Crawler(threading.Thread):
 				# exit()
 				return result.inserted_id
 		except Exception as e:
+			# raise e
 			# return
 			print(e)
 			# exit()
@@ -329,6 +429,7 @@ class Crawler(threading.Thread):
 				result['summary']=summary_text
 			return json.dumps(result)
 		except Exception as e:
+			# raise e
 			print(e)
 			return False
 
@@ -344,6 +445,7 @@ class Crawler(threading.Thread):
 			# what if the metadata does not contain a link to a file
 			return self.getMetadata(base,content)
 		except Exception as e:
+			# raise e
 			# print(e)
 			# print('na meta')
 			return False
@@ -373,6 +475,7 @@ class Crawler(threading.Thread):
 			return False
 		result = (temp[0] if isinstance(temp, list) else temp).get('href')
 		if result.strip()=='#':
+			print(link, temp[0])
 			return self.linkFromJSNext(link,temp[0])
 		return result
 
