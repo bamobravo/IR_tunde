@@ -12,6 +12,9 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 
+
+categories =['','health', 'education', 'Agriculture', 'technology', 'transport',
+       'climate_environment', 'finance']
 ps = PorterStemmer()
 commonWords = []
 try:
@@ -20,14 +23,37 @@ try:
 except Exception as e:
 	nltk.download('stopwords')
 
+english_stopwords = stopwords.words('english')
+
+def tokenize_and_stem(item):
+    exclude =' .,-\t\n_#}{\/][;'   
+    item = item.lower().split()
+    left = [x.lower() for x in item if x not in english_stopwords]
+    left = [x.strip(exclude) for x in left if x and isinstance(x,str) and x.strip(exclude)]
+    ps = PorterStemmer()
+    result = [ps.stem(y) for y in left]
+    return result
+
 class Classifier(object):
 	"""docstring for Classifier"""
-	def __init__(self):
+	def __init__(self):		
 		self.category_vectors = {}
 		self.category_models = {}
 		self.directory = "models/"
-		self.loadAllCategoryVector();
-		self.loadAllModels()
+		# self.loadAllCategoryVector()
+		# self.loadAllModels()
+		self.loadTransformer()
+
+		self.loadSVMModel()
+	
+	def loadSVMModel(self):
+		with open('./svm_model.model','rb') as fl:
+			self.svmModel = pickle.load(fl)
+	
+	def loadTransformer(self):
+		with open('./text_model.vector','rb') as fl:
+			self.transformer = pickle.load(fl)
+
 
 	def getKeywords(self):
 		excludeWords = 'the is of for and new health'.split()
@@ -91,6 +117,14 @@ class Classifier(object):
 		# print(selectedCategory)
 		return result, selectedCategory
 
+	def	getNewScore(self, text, classify=False, threshold=False):
+		text = self.transformer.transform([text])
+		score = self.svmModel.decision_function(text)
+		prediction = self.svmModel.predict(text)
+		score = max(score[0]) 
+		return abs(score) > threshold if classify else score, categories[prediction[0]]
+
+
 	def loadAllModels(self):
 		for f in os.listdir(self.directory):
 			if os.path.isdir(self.directory+f):
@@ -102,7 +136,7 @@ class Classifier(object):
 
 
 	def loadAllCategoryVector(self):
-		directory = self.directory+'vectors/';
+		directory = self.directory+'vectors/'
 		for f in os.listdir(directory):
 			key = f.replace("_model.vec",'')
 			with open(directory+f,'rb') as fl:
@@ -133,6 +167,21 @@ class Classifier(object):
 			temp = self.getScore(t,classify=True, threshold=threshold)
 			result.append(temp)
 		return result
+
+	def newClassify(self,text):
+		'''
+			This will return true or false based on the threshold used
+		'''
+		threshold = 0.5
+		if isinstance(text,str):
+			return self.getNewScore(text,classify=True, threshold=threshold)
+			# return result >= threshold
+		result=[]
+		for t in text:
+			temp = self.getNewScore(t,classify=True, threshold=threshold)
+			result.append(temp)
+		return result
+	
 
 	def getTestScores(self):
 		filePath = 'dmoz_links_test.csv'
