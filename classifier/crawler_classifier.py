@@ -13,8 +13,7 @@ from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 
 
-categories =['','health', 'education', 'Agriculture', 'technology', 'transport',
-       'climate_environment', 'finance']
+
 ps = PorterStemmer()
 commonWords = []
 try:
@@ -36,6 +35,8 @@ def tokenize_and_stem(item):
 
 class Classifier(object):
 	"""docstring for Classifier"""
+	categories =['','health', 'education', 'Agriculture', 'technology', 'transport',
+       'climate_environment', 'finance']
 	def __init__(self):		
 		self.category_vectors = {}
 		self.category_models = {}
@@ -122,7 +123,7 @@ class Classifier(object):
 		score = self.svmModel.decision_function(text)
 		prediction = self.svmModel.predict(text)
 		score = max(score[0]) 
-		return abs(score) > threshold if classify else score, categories[prediction[0]]
+		return abs(score) > threshold if classify else score, self.categories[prediction[0]]
 
 
 	def loadAllModels(self):

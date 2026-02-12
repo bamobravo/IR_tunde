@@ -13,6 +13,7 @@ from itertools import cycle
 from lxml.html import fromstring
 from logger import Log
 from datetime import datetime
+import os
 
 
 
@@ -26,8 +27,9 @@ class Crawler(threading.Thread):
 	
 	def __init__(self, classifier,cache, sites,site_type,proxy=False,method='bfs',suffix=''):
 		self.crawled_count = 0
-		self.saved_count = 0
+		self.saved_count = {x:0 for x in classifier.categories[1:]}
 		self.default_score = 0.01
+		self.virtual_web = []
 		start = time.time()
 		threading.Thread.__init__(self)
 		visiteds = cache.loadVisited()
@@ -59,12 +61,26 @@ class Crawler(threading.Thread):
 		proxies =self.get_proxies()
 		self.proxy_pool = cycle(proxies)
 		self.use_proxy =proxy
+		self.virtual_web_path = f'virtual_web/count{suffix}.data'
+		self.target_len = 0
+		if not os.path.exists('virtual_web'):
+			os.mkdir('virtual_web')
+		if os.path.exists(self.virtual_web_path):
+			with open(self.virtual_web_path,'rb') as flb:
+				try:
+					self.virtual_web = pickle.load(flb)
+				except Exception as e:
+					self.virtual_web = []
 
-		self.log = Log(f'in_crawlinglog{suffix}.csv', 'url','timestamp')
-		self.log2 = Log(f'in_processlog{suffix}.csv', 'url','category', 'timestamp')
-		self.log3 = Log(f'metrics_log{suffix}.csv', 'crawled_count','saved_count', 'timestamp')
-		self.crawled_count += self.log.get_saved_count()
-		self.saved_count += self.log2.get_saved_count()
+		self.log = Log(f'crawl_log/in_crawlinglog{suffix}.csv', 'url','timestamp')
+		self.log2 = Log(f'saved_log/in_processlog{suffix}.csv', 'url','category', 'timestamp')
+		self.log3 = Log(f'metric_log/metrics_log{suffix}.csv', 'crawled_count','saved_count', 'category','virtual_web_count','target_len','timestamp')
+
+		temp_saved = self.log3.get_saved_count(self.classifier.categories[1:])
+		self.crawled_count += self.log3.get_crawled_count()
+		self.saved_count = {x:temp_saved[x] + self.saved_count[x] for x in temp_saved}
+		self.target_len = self.log3.get_last_target_len()
+		self.last_len = 0
 		#create a cache for check the page that has already been visited
 
 	def get_proxies(self):
@@ -144,12 +160,20 @@ class Crawler(threading.Thread):
 		items =['div','h1','h2','h3','h4','h5','h6','p','address','center','ul','dt','table','tr','section']
 		return tag.name in items and tag.find('a')
 
+
+	def getAllRelevantInDepth(self,current_link,htmlContent):
+		list_items= htmlContent.select(self.class_selector)
+		all_links = [self.wrapLink(current_link, x.get('href')) for x in list_items if x]
+		to_add = self.processPage(htmlContent,current_link,all_links)
+		return to_add
+	
 	def start_crawling(self):
 		# put this in a loop and pause by few seconds not to overload the server
 		while len(self.links) > 0:
 			next_score = self.default_score
 			try:
 				self.current_link = self.links.pop(0)
+				# self.last_len+=1
 				if isinstance(self.current_link,tuple):
 					self.current_link= self.current_link[0]
 				print('visiting: ',self.current_link)
@@ -168,11 +192,27 @@ class Crawler(threading.Thread):
 				# print('done making request: ', time.time() - request_start)
 
 				if self.method=='bfs':
-					list_items= htmlContent.select(self.class_selector)
-					self.all_links = [self.wrapLink(self.current_link, x.get('href')) for x in list_items if x]
+					to_add = self.getAllRelevantInDepth(self.current_link,htmlContent)
+					# list_items= htmlContent.select(self.class_selector)
+					# self.all_links = [self.wrapLink(self.current_link, x.get('href')) for x in list_items if x]
+
+					# get the number of relevant pages from this side
+					# add a condition to add allthe visited links after this value is greater
+					# self.virtual_web += self.all_links
 					# extract other links from current page also
-					to_add = self.processPage(htmlContent,self.current_link,self.all_links)
+					# to_add = self.processPage(htmlContent,self.current_link,self.all_links)
+					if  len(self.virtual_web)== 0 or len(self.virtual_web) < sum(self.saved_count.values()):
+						self.virtual_web += to_add
+						with open(self.virtual_web_path,'wb') as flb:
+							pickle.dump(self.virtual_web,flb)
+
+
 				else:
+					if  len(self.virtual_web)== 0 or len(self.virtual_web) < sum(self.saved_count.values()):
+						to_add = self.getAllRelevantInDepth(self.current_link,htmlContent)
+						self.virtual_web += to_add
+						with open(self.virtual_web_path,'wb') as flb:
+							pickle.dump(self.virtual_web,flb)
 					# process_start = time.time()
 					self.next_link = self.processPage(htmlContent,self.current_link,[])
 					content_blocks = htmlContent.find_all(self.selector)
@@ -189,9 +229,6 @@ class Crawler(threading.Thread):
 					# print('time taken to insert: ', time.time() - insert_time)
 
 				if to_add:
-					
-					# the link should be sorted if it is not bfs
-
 					if self.method=='block':
 						# mer_start = time.time()
 						self.links = self.mergeSorted(self.links,to_add)
@@ -200,6 +237,7 @@ class Crawler(threading.Thread):
 					else:
 						self.links+=to_add
 				self.crawled_count+=1
+				self.last_len+=1
 				can_log =  self.crawled_count > 0 and  self.crawled_count % self.save_interval == 0
 				if can_log:
 					with open(self.all_link_path,'wb') as fl:
@@ -211,7 +249,8 @@ class Crawler(threading.Thread):
 				self.log.enter(self.current_link, str(time.time_ns()))
 				
 				if can_log:
-					self.log3.enter(str(self.crawled_count), str(self.saved_count), str(time.time_ns()))
+					total_saved_current = sum(self.saved_count.values())
+					self.log3.enter_count(str(self.crawled_count), self.saved_count, str(len(self.virtual_web)), 0 if not total_saved_current else self.target_len/total_saved_current, str(time.time_ns()))
 				# print('done saving visit and login')
 				# time.sleep(2)
 			except Exception as e:
@@ -266,11 +305,6 @@ class Crawler(threading.Thread):
 				return index +1
 
 	def processPage(self,content, link, all_links=[]):
-		#this will basically decide if to save the page or not based on the content of the page
-		# check if the page has a new page, then add the new page to the list of pages to be visited
-		# convert to text and save with the link as the first thing on the page
-		# link is the current_link
-
 		next_link = self.getNextLink(content,link)
 		if next_link:
 			next_link = self.wrapLink(link,next_link)
@@ -284,7 +318,9 @@ class Crawler(threading.Thread):
 			if status:
 				self.log2.enter(link,category, str(time.time_ns()))
 				self.savePage(category,link, content)
-				self.saved_count+=1
+				self.saved_count[category]+=1
+				self.target_len+=self.last_len
+				self.last_len = 0
 
 		# result = all_links 
 		return all_links

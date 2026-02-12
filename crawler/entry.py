@@ -10,7 +10,7 @@ from nltk.stem import PorterStemmer
 english_stopwords = stopwords.words('english')
 
 def tokenize_and_stem(item):
-    exclude =' .,-\t\n_#}{\/][;'   
+    exclude =' .,-\t\n_#}{\/][;'
     item = item.lower().split()
     left = [x.lower() for x in item if x not in english_stopwords]
     left = [x.strip(exclude) for x in left if x and isinstance(x,str) and x.strip(exclude)]
@@ -22,7 +22,7 @@ def tokenize_and_stem(item):
 
 #ckan.org is a data portal software
 sites =['https://search.open.canada.ca/opendata/','https://catalog.data.gov/dataset','https://www.data.gov.uk/search?filters%5Btopic%5D=Government']
-sites =['https://www.data.gov.uk/search?filters%5Btopic%5D=Government']
+# sites =['https://www.data.gov.uk/search?filters%5Btopic%5D=Government']
 
 # sites=['https://open.canada.ca/data/en/dataset/0313f880-492c-4f4e-95ef-f53e4216576d']
 # sites =['https://data.gov.uk/search?filters%5Btopic%5D=Mapping&page=12']
@@ -30,6 +30,7 @@ sites =['https://www.data.gov.uk/search?filters%5Btopic%5D=Government']
 classifier =  clf.Classifier()
 caches = []
 method ='block'
+# method ='bfs'
 def startCrawler():
 	# create a parralel crawler for each of the websites
 	# get information about pages already visited
